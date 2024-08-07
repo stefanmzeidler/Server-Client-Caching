@@ -9,6 +9,45 @@
 // #define PORT 8080
 #define BUFFER_SIZE 1024
 static char *command = NULL;
+static const int INITIAL_CAPACITY = 8;
+
+typedef struct _cache_t
+{
+    FILE *file;
+    int offset;
+
+} cache_t;
+
+cache_t cache[INITIAL_CAPACITY];
+
+unsigned long hash(unsigned char *str)
+{
+    unsigned long hash = 5381;
+    int cache_length = sizeof(cache) / sizeof(cache_t);
+    int c;
+
+    while (c = *str++)
+    {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+    hash = hash % cache_length;
+    if (hash < 0)
+    {
+        hash += cache_length;
+    }
+    return hash;
+}
+
+char *send_read(int sockfd)
+{
+    char protocol[BUFFER_SIZE] = {0};
+    strcpy(protocol, command);
+    write(sockfd, protocol, BUFFER_SIZE);
+
+    char response[BUFFER_SIZE] = {0};
+    read(sockfd, response, BUFFER_SIZE);
+    return response;
+}
 int main(int argc, char *argv[])
 {
     int sockfd = 0;
@@ -38,37 +77,42 @@ int main(int argc, char *argv[])
     }
 
     command = (char *)malloc(BUFFER_SIZE);
-    printf("Enter command (R for read, W for write, Q for quit)\n");
-    if (fgets(command, BUFFER_SIZE, stdin) == NULL)
+    while (1)
     {
-        printf("Problem getting command, stopping.");
-        return -1;
-    }
-    command[strcspn(command, "\n")] = '\0';
-    if (strcmp(command, "R") == 0)
-    {
-        printf("Read command received\n");
-    }
-    else if (strcmp(command, "W") == 0)
-    {
-        printf("Write command received\n");
-    }
-    else if (strcmp(command, "Q") == 0)
-    {
-        return -1;
-    }
-    else
-    {
-        printf("Invalid command\n");
-    }
-    char greeting[BUFFER_SIZE] = {0};
-    strcpy(greeting, "Hello from client!");
-    write(sockfd, greeting, BUFFER_SIZE);
+        printf("Enter command (R for read, W for write, Q for quit)\n");
+        if (fgets(command, BUFFER_SIZE, stdin) == NULL)
+        {
+            printf("Problem getting command, stopping.");
+            return -1;
+        }
+        command[strcspn(command, "\n")] = '\0';
+        if (strcmp(command, "R") == 0)
+        {
+            printf("Sending read command\n");
+            printf(send_read(sockfd));
+        }
+        else if (strcmp(command, "W") == 0)
+        {
+            printf("Write command received\n");
+        }
+        else if (strcmp(command, "Q") == 0)
+        {
+            break;
+        }
+        else
+        {
+            printf("Invalid command\n");
+        }
+        // char greeting[BUFFER_SIZE] = {0};
+        // strcpy(greeting, "Hello from client!");
+        // write(sockfd, greeting, BUFFER_SIZE);
 
-    char response[BUFFER_SIZE] = {0};
-    read(sockfd, response, BUFFER_SIZE);
-    printf("%s\n", response);
-
+        // char response[BUFFER_SIZE] = {0};
+        // read(sockfd, response, BUFFER_SIZE);
+        // printf("%s\n", response);
+    }
+    free(command);
     close(sockfd);
+
     return 0;
 }
