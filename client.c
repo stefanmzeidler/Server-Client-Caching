@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include "client.h"
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -27,6 +28,14 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    send_read(sockfd);
+
+    close(sockfd);
+    return 0;
+}
+
+void send_read(int sockfd)
+{
     char greeting[BUFFER_SIZE] = {0};
     strcpy(greeting, "Hello from client!");
     write(sockfd, greeting, BUFFER_SIZE);
@@ -34,8 +43,4 @@ int main(int argc, char *argv[]) {
     char response[BUFFER_SIZE] = {0};
     read(sockfd, response, BUFFER_SIZE);
     printf("%s\n", response);
-
-
-    close(sockfd);
-    return 0;
 }
