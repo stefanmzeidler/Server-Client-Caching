@@ -9,8 +9,25 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
+#define MAX_FILENAME 256
 const char *WHITESPACE = " \t\r\v\f";
+const char *ACK = "ACK";
+typedef struct _package
+{
+    char command;
+    char filename[MAX_FILENAME];
+    char data[BUFFER_SIZE - sizeof(char) - MAX_FILENAME];
+} Package;
 
+void unpack(Package *p, char *buffer)
+{
+    size_t offset = 0;
+    memcpy(&(p->command), buffer, sizeof(char));
+    offset += sizeof(char);
+    memcpy(p->filename, buffer + offset, MAX_FILENAME);
+    offset += MAX_FILENAME;
+    memcpy(p->data, buffer + offset, sizeof(p->data));
+}
 int main()
 {
     int sockfd;
@@ -42,24 +59,25 @@ int main()
     {
         int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&client_addr, &addr_len);
         buffer[n] = '\0';
-        char *token = strtok(buffer, WHITESPACE);
+        Package *p = malloc(sizeof(buffer));
+        unpack(p, buffer);
+        // char *token = strtok(buffer, WHITESPACE);
         char *response = malloc(BUFFER_SIZE);
-        if (strcmp(token, "R") == 0)
+        if (p->command == 'R')
         {
             printf("Read command received\n");
-            token = strtok(NULL, WHITESPACE);
-            token[strcspn(token, "\n")] = '\0';
             int fd;
-
-            if ((fd = open(token, O_RDONLY)) == -1)
+            if ((fd = open(p->filename, O_RDONLY)) == -1)
             {
                 char *error = "Error opening file";
-                printf("%s: %s\n", error, token);
+                printf("%s: %s\n", error, p->filename);
                 sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
-                sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
             }
             else
             {
+                printf("Sending ack\n");
+                sendto(sockfd, ACK, strlen(ACK), 0, (struct sockaddr *)&client_addr, addr_len);
+                printf("Reading from file: %s\n", p->filename);
                 while (read(fd, response, BUFFER_SIZE))
                 {
                     sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
@@ -67,13 +85,7 @@ int main()
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
             }
         }
-
-        // printf("Filename: %s\n", token);
-
-        // printf("%s\n", buffer);
-
-        // const char *response = "Hello from server. Got your message.";
-        // sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
+        printf("Server is listening on port %d...\n", PORT);
     }
 
     close(sockfd);

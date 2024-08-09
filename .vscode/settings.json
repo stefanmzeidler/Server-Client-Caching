@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "type_traits": "c"
+        "type_traits": "c",
+        "string.h": "c",
+        "stat.h": "c"
     }
 }

@@ -22,11 +22,19 @@
 
 // #define PORT 8080
 #define BUFFER_SIZE 1024
+#define MAX_FILENAME 256
+#define MAX_DATA BUFFER_SIZE - sizeof(char) - MAX_FILENAME
+#define READ 'R'
+#define TIMEOUT 60
 static char *command = NULL;
 static int port;
-// void *read_from_cache(char *filename)
-// {
-// }
+const char *ACK = "ACK";
+typedef struct _package
+{
+    char command;
+    char filename[MAX_FILENAME];
+    char data[MAX_DATA];
+} Package;
 
 int openSocket(uint16_t port)
 {
@@ -48,48 +56,123 @@ int openSocket(uint16_t port)
     return sockfd;
 }
 
-void update_cache(char *filename, int sockfd)
+void pack(Package *p, char *buffer)
 {
+    size_t offset = 0;
+    memcpy(buffer + offset, &(p->command), sizeof(char));
+    offset += sizeof(char);
+    memcpy(buffer + offset, p->filename, sizeof(p->filename));
+    offset += MAX_FILENAME;
+    memcpy(buffer + offset, p->data, sizeof(p->data));
+}
+
+int update_cache(char *filename)
+{
+    int sockfd = openSocket(port);
     int fd;
     if ((fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0666)) == -1)
     {
-        printf("file open failed\n");
-        exit(-1);
+        printf("cache update failed\n");
+        return -1;
     }
-    char protocol[BUFFER_SIZE] = {0};
-    strcpy(protocol, "R ");
-    strcat(protocol, filename);
-    write(sockfd, protocol, BUFFER_SIZE);
+    Package _message;
+    Package *message = &_message;
+    message->command = READ;
+    strcpy(message->filename, filename);
+    printf("Filename: %s\n", message->filename);;
+    printf("Sending read command\n");
+    char buffer[BUFFER_SIZE];
+    pack(message, buffer);
+    write(sockfd, buffer, BUFFER_SIZE);
     char *response = malloc(BUFFER_SIZE);
-    // read(sockfd, response, BUFFER_SIZE);
-    // write(fd, response, strlen(response));
     int bytes;
+    bytes = read(sockfd, response, BUFFER_SIZE);
+    if(strcmp(response, ACK) == 0){
+        printf("Ack received\n");
+    }
+    else{
+        printf("Cache update failed\n");
+        unlink(filename);
+        return -1;
+    }
     while ((bytes = read(sockfd, response, BUFFER_SIZE)) > 0)
     {
         // printf("%s\n", response);
         write(fd, response, bytes);
     }
+
     free(response);
     close(fd);
+    close(sockfd);
+    return 0;
 }
 
-char *readfile(char *filename)
+int readfile(char *filename)
 {
-
+    char *source = malloc(BUFFER_SIZE);
     struct stat *data = malloc(sizeof(struct stat));
-    if (stat(filename, data) == -1 || (time(NULL) - data->st_mtime) > 1)
+    if (stat(filename, data) == -1 || (time(NULL) - data->st_mtime) > TIMEOUT)
     {
-        int sockfd = openSocket(port);
-        update_cache(filename, sockfd);
-        // close(sockfd);
+        if (update_cache(filename) == -1)
+        {
+            return -1;
+        }
+        source = "Reading content from server: ";
+        // file_data temp = {.filename = filename, .offset = 0};
+        // cache[find(filename, 0)] = &temp;
     }
-    else{
-        printf("file up to date\n");
+    else
+    {
+        source = "Reading content from cache: ";
     }
+    int fd;
+    if ((fd = open(filename, O_RDONLY, 0666)) == -1)
+    {
+        // printf("file open failed\n");
+        return -1;
+    }
+    printf("%s", source);
+    char *buffer = malloc(BUFFER_SIZE);
+    while ((read(fd, buffer, BUFFER_SIZE)) > 0)
+    {
+        printf("%s", buffer);
+    }
+    stat(filename, data);
+    printf("\nCache expires in %ld seconds\n", TIMEOUT - (time(NULL) - data->st_mtime));
+    free(buffer);
     free(data);
-    return NULL;
+    return 0;
 }
 
+char *getFileName()
+{
+    char *fileName = malloc(MAX_FILENAME);
+    printf("Enter filename: ");
+    if ((fgets(fileName, MAX_FILENAME, stdin)) == NULL)
+    {
+        printf("Failed to get filename, aborting\n");
+        exit(-1);
+    }
+    fileName[strcspn(fileName, "\n")] = '\0';
+    return fileName;
+}
+
+int writeFile(char *filename)
+{
+    int sockfd = openSocket(port);
+    char protocol[BUFFER_SIZE] = {0};
+    strcpy(protocol, "W ");
+    strcat(protocol, filename);
+    write(sockfd, protocol, BUFFER_SIZE);
+    char *response = malloc(BUFFER_SIZE);
+    int bytes;
+    if ((bytes = read(sockfd, response, BUFFER_SIZE)) < 1 || strcmp(response, ACK) != 0)
+    {
+        return -1;
+    }
+    update_cache(filename);
+    return 0;
+}
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -130,13 +213,21 @@ int main(int argc, char *argv[])
         command[strcspn(command, "\n")] = '\0';
         if (strcmp(command, "R") == 0)
         {
-            printf("Sending read command\n");
-            readfile("foo.txt");
-            // printf("%s\n", readfile("foo.txt"));
+            if ((readfile(getFileName())) == -1)
+            {
+                printf("Failed to read file\n");
+            }
         }
         else if (strcmp(command, "W") == 0)
         {
-            printf("Write command received\n");
+            if (writeFile(getFileName()) != 0)
+            {
+                printf("Write to file failed. \n");
+            }
+            else
+            {
+                printf("Write succeeded.\n");
+            }
         }
         else if (strcmp(command, "Q") == 0)
         {
