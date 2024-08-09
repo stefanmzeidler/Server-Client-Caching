@@ -19,13 +19,19 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
+#include <dirent.h>
 
 // #define PORT 8080
 #define BUFFER_SIZE 1024
 #define MAX_FILENAME 256
 #define MAX_DATA BUFFER_SIZE - sizeof(char) - MAX_FILENAME
-#define READ "R"
-#define WRITE "W"
+#define CACHE "./cache"
+const char READ = 'R';
+const char WRITE = 'W';
+const char CONTINUE = 'C';
+const char END = 'E';
+const char *ERR = "ERR";
+// #define WRITE 'W'
 #define EMPTY ""
 #define TIMEOUT 60
 const char EOT = 0x04;
@@ -72,26 +78,25 @@ void pack(Package *p, char *buffer)
 int update_cache(char *filename)
 {
     int sockfd = openSocket(port);
+    chdir(CACHE);
     int fd;
     if ((fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0666)) == -1)
     {
         printf("cache update failed\n");
         return -1;
     }
-    // Package _message;
-    // Package *message = &_message;
-    // message->command = READ;
-    // strcpy(message->filename, filename);
+    Package _message;
+    Package *message = &_message;
+    message->command = READ;
+    strcpy(message->filename, filename);
     printf("Sending read command\n");
-    // char buffer[BUFFER_SIZE];
-    // pack(message, buffer);
-    //write(sockfd, buffer, BUFFER_SIZE);
-    
-    write(sockfd, READ, strlen(READ));
-    write(sockfd, filename, strlen(filename));
-    
-    
-    
+    char buffer[BUFFER_SIZE];
+    pack(message, buffer);
+    write(sockfd, buffer, BUFFER_SIZE);
+
+    // write(sockfd, READ, strlen(READ));
+    // write(sockfd, filename, strlen(filename));
+
     char *response = malloc(BUFFER_SIZE);
     int bytes;
     bytes = read(sockfd, response, BUFFER_SIZE);
@@ -118,6 +123,7 @@ int update_cache(char *filename)
 
 int readfile(char *filename)
 {
+    chdir(CACHE);
     char *source = malloc(BUFFER_SIZE);
     struct stat *data = malloc(sizeof(struct stat));
     if (stat(filename, data) == -1 || (time(NULL) - data->st_mtime) > TIMEOUT)
@@ -167,22 +173,52 @@ char *getInput(char *prompt)
 int writeFile(char *filename, char *data)
 {
     int sockfd = openSocket(port);
-    // Package _message;
-    // Package *message = &_message;
-    // message->command = WRITE;
-    // strcpy(message->filename, filename);
-    // strcpy(message->data, data);
+    Package _message;
+    Package *message = &_message;
+    message->command = WRITE;
+    strcpy(message->filename, filename);
+    strcpy(message->data, data);
     printf("Sending write command\n");
-    // char buffer[BUFFER_SIZE];
-    // pack(message, buffer);
-    write(sockfd, WRITE, strlen(WRITE));
-    write(sockfd, filename, strlen(filename));
-    while(write(sockfd, data, BUFFER_SIZE)>0){
-        data+=BUFFER_SIZE;
+    char buffer[BUFFER_SIZE];
+    pack(message, buffer);
+    write(sockfd, buffer, BUFFER_SIZE);
+    char *response = malloc(BUFFER_SIZE);
+    read(sockfd, response, BUFFER_SIZE);
+    if (strcmp(response, ERR) == 0)
+    {
+        close(sockfd);
+        return -1;
     }
-    write(sockfd, &EOT, sizeof(char));
+
+    // write(sockfd, filename, strlen(filename));
+    // while(write(sockfd, data, BUFFER_SIZE)>0){
+    //     data+=BUFFER_SIZE;
+    // }
+    // write(sockfd, &EOT, sizeof(char));
     close(sockfd);
     return 0;
+}
+
+int clearCache()
+{
+    int retval = 0;
+    chdir(CACHE);
+    DIR *dp = opendir(".");
+    if (dp == NULL)
+    {
+        return -1;
+    }
+    struct dirent *d;
+    while ((d = readdir(dp)) != NULL)
+    {
+        printf("%s\n", d->d_name);
+        if ((unlink(d->d_name) == -1))
+        {
+            retval = -1;
+        }
+    }
+    closedir(dp);
+    return retval;
 }
 int main(int argc, char *argv[])
 {
@@ -196,7 +232,8 @@ int main(int argc, char *argv[])
         printf("Argument conversion error\n");
         return -1;
     }
-    //int sockfd = openSocket(port);
+    mkdir(CACHE, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    // int sockfd = openSocket(port);
     command = (char *)malloc(BUFFER_SIZE);
     while (1)
     {
@@ -214,7 +251,7 @@ int main(int argc, char *argv[])
                 printf("Failed to read file\n");
             }
         }
-        else if (strcmp(command, WRITE) == 0)
+        else if (*command == WRITE)
         {
             char *filename = getInput("Enter filename: ");
             char *data = getInput("Enter data: ");
@@ -229,6 +266,7 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(command, "Q") == 0)
         {
+            clearCache();
             break;
         }
         else
@@ -237,7 +275,7 @@ int main(int argc, char *argv[])
         }
     }
     free(command);
-   // close(sockfd);
+    // close(sockfd);
 
     return 0;
 }

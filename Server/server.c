@@ -12,6 +12,7 @@
 #define MAX_FILENAME 256
 const char *WHITESPACE = " \t\r\v\f";
 const char *ACK = "ACK";
+const char *ERR = "ERR";
 typedef struct _package
 {
     char command;
@@ -28,6 +29,7 @@ void unpack(Package *p, char *buffer)
     offset += MAX_FILENAME;
     memcpy(p->data, buffer + offset, sizeof(p->data));
 }
+
 int main()
 {
     int sockfd;
@@ -83,8 +85,8 @@ int main()
                     sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
                 }
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
-                close(fd);
             }
+            close(fd);
         }
         else if (p->command == 'W')
         {
@@ -104,18 +106,12 @@ int main()
                 {
                     char *error = "Error writing to file";
                     printf("%s: %s\n", error, p->filename);
-                    sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
-                }
-                else
-                {
-                    printf("Sending ack\n");
-                    sendto(sockfd, ACK, strlen(ACK), 0, (struct sockaddr *)&client_addr, addr_len);
+                    sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)&client_addr, addr_len);
                 }
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
             }
             close(fd);
         }
-        printf("Server is listening on port %d...\n", PORT);
     }
 
     close(sockfd);
