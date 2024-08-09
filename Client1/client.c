@@ -25,6 +25,7 @@
 #define MAX_FILENAME 256
 #define MAX_DATA BUFFER_SIZE - sizeof(char) - MAX_FILENAME
 #define READ 'R'
+#define WRITE 'W'
 #define TIMEOUT 60
 static char *command = NULL;
 static int port;
@@ -79,7 +80,6 @@ int update_cache(char *filename)
     Package *message = &_message;
     message->command = READ;
     strcpy(message->filename, filename);
-    printf("Filename: %s\n", message->filename);;
     printf("Sending read command\n");
     char buffer[BUFFER_SIZE];
     pack(message, buffer);
@@ -87,17 +87,18 @@ int update_cache(char *filename)
     char *response = malloc(BUFFER_SIZE);
     int bytes;
     bytes = read(sockfd, response, BUFFER_SIZE);
-    if(strcmp(response, ACK) == 0){
+    if (strcmp(response, ACK) == 0)
+    {
         printf("Ack received\n");
     }
-    else{
-        printf("Cache update failed\n");
+    else
+    {
+
         unlink(filename);
         return -1;
     }
     while ((bytes = read(sockfd, response, BUFFER_SIZE)) > 0)
     {
-        // printf("%s\n", response);
         write(fd, response, bytes);
     }
 
@@ -115,11 +116,10 @@ int readfile(char *filename)
     {
         if (update_cache(filename) == -1)
         {
+            printf("Cache update failed\n");
             return -1;
         }
         source = "Reading content from server: ";
-        // file_data temp = {.filename = filename, .offset = 0};
-        // cache[find(filename, 0)] = &temp;
     }
     else
     {
@@ -128,7 +128,6 @@ int readfile(char *filename)
     int fd;
     if ((fd = open(filename, O_RDONLY, 0666)) == -1)
     {
-        // printf("file open failed\n");
         return -1;
     }
     printf("%s", source);
@@ -144,33 +143,43 @@ int readfile(char *filename)
     return 0;
 }
 
-char *getFileName()
+char *getInput(char *prompt)
 {
     char *fileName = malloc(MAX_FILENAME);
-    printf("Enter filename: ");
+    printf("%s", prompt);
     if ((fgets(fileName, MAX_FILENAME, stdin)) == NULL)
     {
-        printf("Failed to get filename, aborting\n");
+        printf("Failed to get input, aborting\n");
         exit(-1);
     }
     fileName[strcspn(fileName, "\n")] = '\0';
     return fileName;
 }
 
-int writeFile(char *filename)
+int writeFile(char *filename, char *data)
 {
     int sockfd = openSocket(port);
-    char protocol[BUFFER_SIZE] = {0};
-    strcpy(protocol, "W ");
-    strcat(protocol, filename);
-    write(sockfd, protocol, BUFFER_SIZE);
+    Package _message;
+    Package *message = &_message;
+    message->command = WRITE;
+    strcpy(message->filename, filename);
+    strcpy(message->data, data);
+    printf("Sending write command\n");
+    char buffer[BUFFER_SIZE];
+    pack(message, buffer);
+    write(sockfd, buffer, BUFFER_SIZE);
     char *response = malloc(BUFFER_SIZE);
     int bytes;
-    if ((bytes = read(sockfd, response, BUFFER_SIZE)) < 1 || strcmp(response, ACK) != 0)
+    bytes = read(sockfd, response, BUFFER_SIZE);
+    if (bytes > 0 && strcmp(response, ACK) == 0)
+    {
+        printf("Ack received\n");
+    }
+    else
     {
         return -1;
     }
-    update_cache(filename);
+    close(sockfd);
     return 0;
 }
 int main(int argc, char *argv[])
@@ -185,21 +194,6 @@ int main(int argc, char *argv[])
         printf("Argument conversion error\n");
         return -1;
     }
-    // int sockfd = 0;
-    // struct sockaddr_in serv_addr;
-    // if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-    // {
-    //     printf("\n Socket creation error \n");
-    //     return -1;
-    // }
-    // serv_addr.sin_family = AF_INET;
-    // serv_addr.sin_port = htons(port);
-    // serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    // if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    // {
-    //     printf("\nConnection Failed \n");
-    //     return -1;
-    // }
     int sockfd = openSocket(port);
     command = (char *)malloc(BUFFER_SIZE);
     while (1)
@@ -213,14 +207,16 @@ int main(int argc, char *argv[])
         command[strcspn(command, "\n")] = '\0';
         if (strcmp(command, "R") == 0)
         {
-            if ((readfile(getFileName())) == -1)
+            if ((readfile(getInput("Enter filename: "))) == -1)
             {
                 printf("Failed to read file\n");
             }
         }
         else if (strcmp(command, "W") == 0)
         {
-            if (writeFile(getFileName()) != 0)
+            char *filename = getInput("Enter filename: ");
+            char *data = getInput("Enter data: ");
+            if (writeFile(filename, data) != 0)
             {
                 printf("Write to file failed. \n");
             }

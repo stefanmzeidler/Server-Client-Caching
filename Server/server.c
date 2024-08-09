@@ -83,7 +83,37 @@ int main()
                     sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
                 }
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
+                close(fd);
             }
+        }
+        else if (p->command == 'W')
+        {
+            printf("Write command received\n");
+            int fd;
+            if ((fd = open(p->filename, O_CREAT | O_WRONLY | O_TRUNC, 0666)) == -1)
+            {
+                char *error = "Error opening file";
+                printf("%s: %s\n", error, p->filename);
+                sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
+            }
+            else
+            {
+
+                printf("Writing to file: %s\n", p->filename);
+                if ((write(fd, p->data, strlen(p->data))) == -1)
+                {
+                    char *error = "Error writing to file";
+                    printf("%s: %s\n", error, p->filename);
+                    sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
+                }
+                else
+                {
+                    printf("Sending ack\n");
+                    sendto(sockfd, ACK, strlen(ACK), 0, (struct sockaddr *)&client_addr, addr_len);
+                }
+                sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
+            }
+            close(fd);
         }
         printf("Server is listening on port %d...\n", PORT);
     }
