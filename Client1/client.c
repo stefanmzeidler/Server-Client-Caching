@@ -24,9 +24,11 @@
 #define BUFFER_SIZE 1024
 #define MAX_FILENAME 256
 #define MAX_DATA BUFFER_SIZE - sizeof(char) - MAX_FILENAME
-#define READ 'R'
-#define WRITE 'W'
+#define READ "R"
+#define WRITE "W"
+#define EMPTY ""
 #define TIMEOUT 60
+const char EOT = 0x04;
 static char *command = NULL;
 static int port;
 const char *ACK = "ACK";
@@ -76,14 +78,20 @@ int update_cache(char *filename)
         printf("cache update failed\n");
         return -1;
     }
-    Package _message;
-    Package *message = &_message;
-    message->command = READ;
-    strcpy(message->filename, filename);
+    // Package _message;
+    // Package *message = &_message;
+    // message->command = READ;
+    // strcpy(message->filename, filename);
     printf("Sending read command\n");
-    char buffer[BUFFER_SIZE];
-    pack(message, buffer);
-    write(sockfd, buffer, BUFFER_SIZE);
+    // char buffer[BUFFER_SIZE];
+    // pack(message, buffer);
+    //write(sockfd, buffer, BUFFER_SIZE);
+    
+    write(sockfd, READ, strlen(READ));
+    write(sockfd, filename, strlen(filename));
+    
+    
+    
     char *response = malloc(BUFFER_SIZE);
     int bytes;
     bytes = read(sockfd, response, BUFFER_SIZE);
@@ -101,7 +109,7 @@ int update_cache(char *filename)
     {
         write(fd, response, bytes);
     }
-
+    write(sockfd, EMPTY, 0);
     free(response);
     close(fd);
     close(sockfd);
@@ -159,26 +167,20 @@ char *getInput(char *prompt)
 int writeFile(char *filename, char *data)
 {
     int sockfd = openSocket(port);
-    Package _message;
-    Package *message = &_message;
-    message->command = WRITE;
-    strcpy(message->filename, filename);
-    strcpy(message->data, data);
+    // Package _message;
+    // Package *message = &_message;
+    // message->command = WRITE;
+    // strcpy(message->filename, filename);
+    // strcpy(message->data, data);
     printf("Sending write command\n");
-    char buffer[BUFFER_SIZE];
-    pack(message, buffer);
-    write(sockfd, buffer, BUFFER_SIZE);
-    char *response = malloc(BUFFER_SIZE);
-    int bytes;
-    bytes = read(sockfd, response, BUFFER_SIZE);
-    if (bytes > 0 && strcmp(response, ACK) == 0)
-    {
-        printf("Ack received\n");
+    // char buffer[BUFFER_SIZE];
+    // pack(message, buffer);
+    write(sockfd, WRITE, strlen(WRITE));
+    write(sockfd, filename, strlen(filename));
+    while(write(sockfd, data, BUFFER_SIZE)>0){
+        data+=BUFFER_SIZE;
     }
-    else
-    {
-        return -1;
-    }
+    write(sockfd, &EOT, sizeof(char));
     close(sockfd);
     return 0;
 }
@@ -194,7 +196,7 @@ int main(int argc, char *argv[])
         printf("Argument conversion error\n");
         return -1;
     }
-    int sockfd = openSocket(port);
+    //int sockfd = openSocket(port);
     command = (char *)malloc(BUFFER_SIZE);
     while (1)
     {
@@ -212,7 +214,7 @@ int main(int argc, char *argv[])
                 printf("Failed to read file\n");
             }
         }
-        else if (strcmp(command, "W") == 0)
+        else if (strcmp(command, WRITE) == 0)
         {
             char *filename = getInput("Enter filename: ");
             char *data = getInput("Enter data: ");
@@ -233,16 +235,9 @@ int main(int argc, char *argv[])
         {
             printf("Invalid command\n");
         }
-        // char greeting[BUFFER_SIZE] = {0};
-        // strcpy(greeting, "Hello from client!");
-        // write(sockfd, greeting, BUFFER_SIZE);
-
-        // char response[BUFFER_SIZE] = {0};
-        // read(sockfd, response, BUFFER_SIZE);
-        // printf("%s\n", response);
     }
     free(command);
-    close(sockfd);
+   // close(sockfd);
 
     return 0;
 }
