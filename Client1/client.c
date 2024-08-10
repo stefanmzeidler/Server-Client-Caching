@@ -28,6 +28,7 @@
 #define CACHE "./cache"
 const char READ = 'R';
 const char WRITE = 'W';
+const char QUERY = 'Q';
 const char CONTINUE = 'C';
 const char END = 'E';
 const char *ERR = "ERR";
@@ -38,6 +39,7 @@ const char EOT = 0x04;
 static char *command = NULL;
 static int port;
 const char *ACK = "ACK";
+int mode = 1;
 typedef struct _package
 {
     char command;
@@ -64,7 +66,28 @@ int openSocket(uint16_t port)
     }
     return sockfd;
 }
-
+unsigned int checksum(char *filepath)
+{
+    unsigned int sum = 0;
+    int fd;
+    if ((fd = open(filepath, O_RDONLY, 0666)) == -1)
+    {
+        return -1;
+    }
+    char *buffer = malloc(BUFFER_SIZE);
+    char *ptr = buffer;
+    while ((read(fd, buffer, BUFFER_SIZE)) > 0)
+    {
+        while (*buffer)
+        {
+            sum += *buffer;
+            buffer++;
+        }
+        buffer = ptr;
+    }
+    printf("%u\n", sum);
+    return sum;
+}
 void pack(Package *p, char *buffer)
 {
     size_t offset = 0;
@@ -75,6 +98,50 @@ void pack(Package *p, char *buffer)
     memcpy(buffer + offset, p->data, sizeof(p->data));
 }
 
+int validateCache(char *filename)
+{
+    chdir(CACHE);
+    struct stat *data = malloc(sizeof(struct stat));
+    if (stat(filename, data) == -1)
+    {
+        return 0;
+    }
+    if (mode == 1)
+    {
+        if ((time(NULL) - data->st_mtime) > TIMEOUT)
+        {
+            printf("Cache invalid\n");
+            return 0;
+        }
+        else
+        {
+            return 1;
+        }
+    }
+    else
+    {
+        int sockfd = openSocket(port);
+
+        Package _message;
+        Package *message = &_message;
+        message->command = QUERY;
+        strcpy(message->filename, filename);
+        printf("Sending query command\n");
+        char buffer[BUFFER_SIZE];
+        pack(message, buffer);
+        write(sockfd, buffer, BUFFER_SIZE);
+        char *response = malloc(BUFFER_SIZE);
+        read(sockfd, response, BUFFER_SIZE);
+        char *endptr;
+        unsigned int s_checksum = strtoul(response, &endptr, 10);
+        unsigned int c_checksum = checksum(filename);
+        if (s_checksum != c_checksum)
+        {
+            return 0;
+        }
+        return 1;
+    }
+}
 int update_cache(char *filename)
 {
     int sockfd = openSocket(port);
@@ -100,13 +167,8 @@ int update_cache(char *filename)
     char *response = malloc(BUFFER_SIZE);
     int bytes;
     bytes = read(sockfd, response, BUFFER_SIZE);
-    if (strcmp(response, ACK) == 0)
+    if (strcmp(response, ERR) == 0)
     {
-        printf("Ack received\n");
-    }
-    else
-    {
-
         unlink(filename);
         return -1;
     }
@@ -126,7 +188,7 @@ int readfile(char *filename)
     chdir(CACHE);
     char *source = malloc(BUFFER_SIZE);
     struct stat *data = malloc(sizeof(struct stat));
-    if (stat(filename, data) == -1 || (time(NULL) - data->st_mtime) > TIMEOUT)
+    if (!validateCache(filename))
     {
         if (update_cache(filename) == -1)
         {
@@ -150,8 +212,12 @@ int readfile(char *filename)
     {
         printf("%s", buffer);
     }
+    printf("\n");
     stat(filename, data);
-    printf("\nCache expires in %ld seconds\n", TIMEOUT - (time(NULL) - data->st_mtime));
+    if (mode == 1)
+    {
+        printf("\nCache expires in %ld seconds\n", TIMEOUT - (time(NULL) - data->st_mtime));
+    }
     free(buffer);
     free(data);
     return 0;
@@ -159,9 +225,9 @@ int readfile(char *filename)
 
 char *getInput(char *prompt)
 {
-    char *fileName = malloc(MAX_FILENAME);
+    char *fileName = malloc(BUFFER_SIZE);
     printf("%s", prompt);
-    if ((fgets(fileName, MAX_FILENAME, stdin)) == NULL)
+    if ((fgets(fileName, BUFFER_SIZE, stdin)) == NULL)
     {
         printf("Failed to get input, aborting\n");
         exit(-1);
@@ -233,8 +299,13 @@ int main(int argc, char *argv[])
         return -1;
     }
     mkdir(CACHE, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    // int sockfd = openSocket(port);
     command = (char *)malloc(BUFFER_SIZE);
+    char *modeS = getInput("Choose cache validation method:\n1. Timeout-based validation\n2. Attribute-based validation\nEnter choice (1 or 2): ");
+    if ((mode = atoi(modeS)) == 0)
+    {
+        printf("Input conversion error\n");
+        return -1;
+    }
     while (1)
     {
         printf("Enter command (R for read, W for write, Q for quit)\n");
@@ -254,6 +325,11 @@ int main(int argc, char *argv[])
         else if (*command == WRITE)
         {
             char *filename = getInput("Enter filename: ");
+            while (strlen(filename) > MAX_FILENAME)
+            {
+                printf("Filename max 255 characters");
+                filename = getInput("Enter filename: ");
+            }
             char *data = getInput("Enter data: ");
             if (writeFile(filename, data) != 0)
             {
@@ -275,7 +351,6 @@ int main(int argc, char *argv[])
         }
     }
     free(command);
-    // close(sockfd);
 
     return 0;
 }

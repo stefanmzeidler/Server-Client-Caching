@@ -13,6 +13,11 @@
 const char *WHITESPACE = " \t\r\v\f";
 const char *ACK = "ACK";
 const char *ERR = "ERR";
+const char READ = 'R';
+const char WRITE = 'W';
+const char QUERY = 'Q';
+const char CONTINUE = 'C';
+const char END = 'E';
 typedef struct _package
 {
     char command;
@@ -29,7 +34,27 @@ void unpack(Package *p, char *buffer)
     offset += MAX_FILENAME;
     memcpy(p->data, buffer + offset, sizeof(p->data));
 }
-
+unsigned int checksum(char *filepath)
+{
+    unsigned int sum = 0;
+    int fd;
+    if ((fd = open(filepath, O_RDONLY, 0666)) == -1)
+    {
+        return -1;
+    }
+    char *buffer = malloc(BUFFER_SIZE);
+    char *ptr = buffer;
+    while ((read(fd, buffer, BUFFER_SIZE)) > 0)
+    {
+        while (*buffer)
+        {
+            sum += *buffer;
+            buffer++;
+        }
+        buffer = ptr;
+    }
+    return sum;
+}
 int main()
 {
     int sockfd;
@@ -65,7 +90,7 @@ int main()
         unpack(p, buffer);
         // char *token = strtok(buffer, WHITESPACE);
         char *response = malloc(BUFFER_SIZE);
-        if (p->command == 'R')
+        if (p->command == READ)
         {
             printf("Read command received\n");
             int fd;
@@ -73,11 +98,10 @@ int main()
             {
                 char *error = "Error opening file";
                 printf("%s: %s\n", error, p->filename);
-                sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
+                sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)&client_addr, addr_len);
             }
             else
             {
-                printf("Sending ack\n");
                 sendto(sockfd, ACK, strlen(ACK), 0, (struct sockaddr *)&client_addr, addr_len);
                 printf("Reading from file: %s\n", p->filename);
                 while (read(fd, response, BUFFER_SIZE))
@@ -85,10 +109,11 @@ int main()
                     sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
                 }
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
+                printf("Read complete\n");
             }
             close(fd);
         }
-        else if (p->command == 'W')
+        else if (p->command == WRITE)
         {
             printf("Write command received\n");
             int fd;
@@ -109,8 +134,19 @@ int main()
                     sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)&client_addr, addr_len);
                 }
                 sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
+                printf("Write complete\n");
             }
             close(fd);
+        }
+        else if (p->command == QUERY)
+        {
+            printf("Query command received\n");
+            char *response = malloc(BUFFER_SIZE);
+            unsigned int sum = checksum(p->filename);
+            printf("%u\n", sum);
+            sprintf(response, "%u", sum);
+            printf("%s\n", response);
+            sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
         }
     }
 
