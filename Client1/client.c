@@ -42,6 +42,7 @@
 #define MAX_FILENAME 256
 #define MAX_DATA BUFFER_SIZE - sizeof(char) - MAX_FILENAME
 #define CACHE "./cache"
+#define LOCALHOST "127.0.0.1"
 const char READ = 'R';
 const char WRITE = 'W';
 const char QUIT = 'Q';
@@ -88,7 +89,7 @@ int clearCache()
  * @param port The port number to use for connection.
  * @return The global variable sockfd, referring to the socket descriptor, has been set.
  */
-void openSocket(uint16_t port)
+void openSocket(uint16_t port, char *host)
 {
 
     struct sockaddr_in serv_addr;
@@ -98,9 +99,17 @@ void openSocket(uint16_t port)
         clearCache();
         exit(EXIT_FAILURE);
     }
+
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
-    serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (strcmp(host, "localhost") == 0)
+    {
+        serv_addr.sin_addr.s_addr = inet_addr(LOCALHOST);
+    }
+    else
+    {
+        serv_addr.sin_addr.s_addr = inet_addr(host);
+    }
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
         printf("\nConnection Failed \n");
@@ -124,7 +133,7 @@ void openSocket(uint16_t port)
 int safeRead(char *response)
 {
     int retval = 0;
-    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1|| (strcmp(response, ERR)) == 0)
+    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1 || (strcmp(response, ERR)) == 0)
     {
         printf("Server read failure, aborting.\n");
         clearCache();
@@ -382,18 +391,18 @@ int writeFile(char *filename, char *data)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc != 3)
     {
         printf("Incorrect number of arguments\n");
         return -1;
     }
     int port;
-    if ((port = atoi(argv[1])) == 0)
+    if ((port = atoi(argv[2])) == 0)
     {
         printf("Argument conversion error\n");
         return -1;
     }
-    openSocket(port);
+    openSocket(port, argv[1]);
     mkdir(CACHE, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     char *modeS = getInput("Choose cache validation method:\n1. Timeout-based validation\n2. Checksum-based validation\nEnter choice (1 or 2): ");
     while (strcmp(modeS, "1") && strcmp(modeS, "2"))
