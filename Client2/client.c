@@ -1,11 +1,27 @@
 /**
  * Author: Stefan Zeidler
+ * August 6, 2024
  *
- * This program simulates a client asking a server to execute remote commands.
- *
+ * This program simulates a client asking a server to execute remote commands. 
+ * This program uses two different methods of cache validation. First, it uses a timeout method so that the cache expires after a set period of time. Second,
+ * before reading from the cached file (if any), the program calculates a simple checksum of the file and asks the server for the checksum of the server version.
+ * If the checksums do not match, the client requests the server version and updates its cache. If they do match, it simply reads from the cache.
+ * 
+ * The checksum validation addresses the issue where client A updates the server version of a file before client B's cached version expires. 
+ * This means that client B will read from the cache and have an outdated version. With checksum validation, all clients will be significantly more likely to have 
+ * the real-time version of the file. However, this comes at the cost of overhead. Each time a client wants to read a file it needs to send and receive data from the
+ * server as well as compute its own checksum. As the checksum algorithm gets more complex and the files get larger, this will increase the time to validate the cache.
+ * This also does not address the issue if the server version is updated after the file checksum is sent but before the client reads the file from its cache. 
+ * Additionally, since my checksum algorith is very simple, I think it is possible that two files with same exact characters but in a different order would 
+ * have the same checksum. 
+ * 
+ * 
  * Resources used:
- * CS351 Homework Assignment for powers of two bitwise comparison.
+ * For serializing and deserializing of structures:
+ * https://stackoverflow.com/questions/15707933/how-to-serialize-a-struct-in-c
  *
+ * For basic checksum algorithm:
+ * https://www.tutorialspoint.com/c-program-to-implement-checksum
  *
  */
 
@@ -35,6 +51,7 @@ const char *ERR = "ERR";
 #define TIMEOUT 60
 static int sockfd;
 int mode = 1;
+
 typedef struct _package
 {
     char command;
@@ -42,6 +59,10 @@ typedef struct _package
     char data[MAX_DATA];
 } Package;
 
+/**
+ * Helper method to clear the cache upon program exit.
+ * @return returns 0 if all files were successfully deleted or -1 if one or more files failed to be deleted.
+ */
 int clearCache()
 {
     int retval = 0;
@@ -62,6 +83,12 @@ int clearCache()
     closedir(dp);
     return retval;
 }
+
+/**
+ * Helper method to open a UDP socket for communication with a server.
+ * @param port The port number to use for connection.
+ * @return The global variable sockfd, referring to the socket descriptor, has been set.
+ */
 void openSocket(uint16_t port)
 {
 

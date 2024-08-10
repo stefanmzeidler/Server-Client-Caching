@@ -1,11 +1,27 @@
 /**
  * Author: Stefan Zeidler
+ * August 6, 2024
  *
  * This program simulates a client asking a server to execute remote commands.
+ * This program uses two different methods of cache validation. First, it uses a timeout method so that the cache expires after a set period of time. Second,
+ * before reading from the cached file (if any), the program calculates a simple checksum of the file and asks the server for the checksum of the server version.
+ * If the checksums do not match, the client requests the server version and updates its cache. If they do match, it simply reads from the cache.
+ *
+ * The checksum validation addresses the issue where client A updates the server version of a file before client B's cached version expires.
+ * This means that client B will read from the cache and have an outdated version. With checksum validation, all clients will be significantly more likely to have
+ * the real-time version of the file. However, this comes at the cost of overhead. Each time a client wants to read a file it needs to send and receive data from the
+ * server as well as compute its own checksum. As the checksum algorithm gets more complex and the files get larger, this will increase the time to validate the cache.
+ * This also does not address the issue if the server version is updated after the file checksum is sent but before the client reads the file from its cache.
+ * Additionally, since my checksum algorith is very simple, I think it is possible that two files with same exact characters but in a different order would
+ * have the same checksum.
+ *
  *
  * Resources used:
- * CS351 Homework Assignment for powers of two bitwise comparison.
+ * For serializing and deserializing of structures:
+ * https://stackoverflow.com/questions/15707933/how-to-serialize-a-struct-in-c
  *
+ * For basic checksum algorithm:
+ * https://www.tutorialspoint.com/c-program-to-implement-checksum
  *
  */
 
@@ -42,6 +58,10 @@ typedef struct _package
     char data[MAX_DATA];
 } Package;
 
+/**
+ * Helper method to clear the cache upon program exit.
+ * @return returns 0 if all files were successfully deleted or -1 if one or more files failed to be deleted.
+ */
 int clearCache()
 {
     int retval = 0;
@@ -62,6 +82,12 @@ int clearCache()
     closedir(dp);
     return retval;
 }
+
+/**
+ * Helper method to open a UDP socket for communication with a server.
+ * @param port The port number to use for connection.
+ * @return The global variable sockfd, referring to the socket descriptor, has been set.
+ */
 void openSocket(uint16_t port)
 {
 
@@ -82,6 +108,12 @@ void openSocket(uint16_t port)
         exit(EXIT_FAILURE);
     }
 }
+
+/**
+ * Helper method to reduce code duplication when reading from the server.
+ * @param response String where to store the response from the server.
+ * @return Returns the number of bytes read.
+ */
 int safeRead(char *response)
 {
     int retval = 0;
@@ -94,6 +126,11 @@ int safeRead(char *response)
     return retval;
 }
 
+/**
+ * Helper method to reduce code duplication when writing to the server.
+ * @param buffer String where to write to the server.
+ * @return Returns the number of bytes written.
+ */
 int safeWrite(char *buffer)
 {
     int retval = 0;
@@ -105,6 +142,12 @@ int safeWrite(char *buffer)
     }
     return retval;
 }
+
+/**
+ * Calculates a file checksum based on the sum of all strings in the file.
+ * @param filepath Path to the file.
+ * @return Returns the calculated file checksum.
+ */
 unsigned int checksum(char *filepath)
 {
     unsigned int sum = 0;
@@ -127,6 +170,13 @@ unsigned int checksum(char *filepath)
     free(buffer);
     return sum;
 }
+
+/**
+ * Method to serialize the Package struct to send to the server.
+ * @param p Package to serialize.
+ * @param buffer Char* buffer to place serialized structure.
+ * @return The buffer contains the serialized structure.
+ */
 void pack(Package *p, char *buffer)
 {
     size_t offset = 0;
@@ -137,6 +187,12 @@ void pack(Package *p, char *buffer)
     memcpy(buffer + offset, p->data, sizeof(p->data));
 }
 
+/**
+ * Validates the cache based on the client-selected method. Can either use a timeout or checksum comparision with the server version.
+ * Requires that client and server use the same checksum algorithm.
+ * @param filename Cached version of this file will be validated.
+ * @return Returns 0 If file does not exist in cache or the cached version is invalid. Returns 1 if cached version exists and is valid. 
+ */
 int validateCache(char *filename)
 {
     chdir(CACHE);
@@ -187,6 +243,11 @@ int validateCache(char *filename)
     }
 }
 
+/**
+ * Helper method to update cached version from server. Requests file from server and writes to cache.
+ * @param filename File to update.
+ * @return Returns 0 if operation was successful or -1 of operation failed.
+ */
 int update_cache(char *filename)
 {
 
@@ -225,6 +286,11 @@ int update_cache(char *filename)
     return 0;
 }
 
+/**
+ * Reads selected file and prints to stdout. Will either read from cache or server depending cache validity. File must be present on server.
+ * @param filename File to read. 
+ * @return Returns 0 if read was successful or -1 if read was not successful.
+ */
 int readfile(char *filename)
 {
     chdir(CACHE);
@@ -268,6 +334,11 @@ int readfile(char *filename)
     return 0;
 }
 
+/**
+ * Helper method to get user input from stdin.
+ * @param prompt Prompt to ask user.
+ * @return Character pointer containing use response.
+ */
 char *getInput(char *prompt)
 {
     char *retval = malloc(BUFFER_SIZE);
@@ -282,6 +353,12 @@ char *getInput(char *prompt)
     return retval;
 }
 
+/**
+ * Writes user-specified text to server file. If file does not exist on server, new file is created.
+ * @param filename Filename of file to write to or create.
+ * @param data Data to write to file.
+ * @return Returns 0 if write was successful or -1 if write failed.
+ */
 int writeFile(char *filename, char *data)
 {
 
