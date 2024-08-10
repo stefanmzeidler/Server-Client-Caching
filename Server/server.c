@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-#define PORT 8080
 #define BUFFER_SIZE 1024
 #define MAX_FILENAME 256
 const char *WHITESPACE = " \t\r\v\f";
@@ -15,9 +14,9 @@ const char *ACK = "ACK";
 const char *ERR = "ERR";
 const char READ = 'R';
 const char WRITE = 'W';
-const char QUERY = 'Q';
-const char CONTINUE = 'C';
-const char END = 'E';
+const char GET = 'G';
+static int port;
+
 typedef struct _package
 {
     char command;
@@ -55,8 +54,18 @@ unsigned int checksum(char *filepath)
     }
     return sum;
 }
-int main()
+int main(int argc, char *argv[])
 {
+    if (argc != 2)
+    {
+        printf("Incorrect number of arguments\n");
+        return -1;
+    }
+    if ((port = atoi(argv[1])) == 0)
+    {
+        printf("Argument conversion error\n");
+        return -1;
+    }
     int sockfd;
     struct sockaddr_in serv_addr, client_addr;
     char buffer[BUFFER_SIZE];
@@ -71,7 +80,7 @@ int main()
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(port);
 
     if (bind(sockfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
@@ -80,7 +89,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    printf("Server is listening on port %d...\n", PORT);
+    printf("Server is listening on port %d...\n", port);
 
     while (1)
     {
@@ -88,7 +97,6 @@ int main()
         buffer[n] = '\0';
         Package *p = malloc(sizeof(buffer));
         unpack(p, buffer);
-        // char *token = strtok(buffer, WHITESPACE);
         char *response = malloc(BUFFER_SIZE);
         if (p->command == READ)
         {
@@ -138,18 +146,15 @@ int main()
             }
             close(fd);
         }
-        else if (p->command == QUERY)
+        else if (p->command == GET)
         {
-            printf("Query command received\n");
+            printf("Get command received\n");
             char *response = malloc(BUFFER_SIZE);
             unsigned int sum = checksum(p->filename);
-            printf("%u\n", sum);
             sprintf(response, "%u", sum);
-            printf("%s\n", response);
             sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
         }
     }
-
     close(sockfd);
     return 0;
 }

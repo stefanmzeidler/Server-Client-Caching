@@ -81,6 +81,18 @@ void openSocket(uint16_t port)
         clearCache();
         exit(EXIT_FAILURE);
     }
+
+    // struct timeval tv;
+    // tv.tv_sec = 0;
+    // tv.tv_usec = 100000;
+    // if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    // {
+    //     perror("Error");
+    // }
+    // if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
+    // {
+    //     perror("Error");
+    // }
 }
 int safeRead(char *response)
 {
@@ -228,6 +240,7 @@ int update_cache(char *filename)
 int readfile(char *filename)
 {
     chdir(CACHE);
+    // char *source = malloc(BUFFER_SIZE);
     struct stat *data = malloc(sizeof(struct stat));
     if (!validateCache(filename))
     {
@@ -255,10 +268,7 @@ int readfile(char *filename)
     {
         printf("%s", buffer);
     }
-    if (mode == 2)
-    {
-        printf("\n");
-    }
+    printf("\n");
     stat(filename, data);
     if (mode == 1)
     {
@@ -300,10 +310,6 @@ int writeFile(char *filename, char *data)
     {
         return -1;
     }
-    if (mode == 1)
-    {
-        update_cache(filename);
-    }
     return 0;
 }
 
@@ -322,6 +328,7 @@ int main(int argc, char *argv[])
     }
     openSocket(port);
     mkdir(CACHE, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    // command = (char *)malloc(BUFFER_SIZE);
     char *modeS = getInput("Choose cache validation method:\n1. Timeout-based validation\n2. Checksum-based validation\nEnter choice (1 or 2): ");
     while (strcmp(modeS, "1") && strcmp(modeS, "2"))
     {
@@ -376,7 +383,7 @@ int main(int argc, char *argv[])
         free(command);
         free(filename);
     }
-
+    
     clearCache();
     close(sockfd);
     return 0;
