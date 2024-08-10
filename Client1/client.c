@@ -314,7 +314,6 @@ int readfile(char *filename)
         free(data);
         return -1;
     }
-
     char buffer[BUFFER_SIZE] = EMPTY;
     while ((read(fd, buffer, BUFFER_SIZE)) > 0)
     {

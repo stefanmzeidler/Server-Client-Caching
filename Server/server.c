@@ -82,6 +82,93 @@ unsigned int checksum(char *filepath)
     return sum;
 }
 
+/**
+ * Reads from client-specified file and sents to client. Extracted method.
+ * @param p Package to serialize file data.
+ * @param sockfd Socket to use.
+ * @param client_ptr Client to sent data to.
+ * @param addr_len Address length.
+ * @return File has been serialized and sent to client.
+ */
+void read_file(Package *p, int sockfd, struct sockaddr_in *client_ptr, socklen_t addr_len)
+{
+    printf("Read command received\n");
+    char *response = malloc(BUFFER_SIZE);
+    int fd;
+    if ((fd = open(p->filename, O_RDONLY)) == -1)
+    {
+        char *error = "Error opening file";
+        printf("%s: %s\n", error, p->filename);
+        sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)client_ptr, addr_len);
+    }
+    else
+    {
+        printf("Reading from file: %s\n", p->filename);
+        while (read(fd, response, BUFFER_SIZE))
+        {
+            sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)client_ptr, addr_len);
+        }
+        sendto(sockfd, response, 0, 0, (struct sockaddr *)client_ptr, addr_len);
+        printf("Read complete\n");
+    }
+    free(response);
+    close(fd);
+}
+
+/**
+ * Writes data from client to client-specified file. Extracted method.
+ * @param p Package from client with serialized data.
+ * @param sockfd Socket to use to communicate with client.
+ * @param client_ptr Client that sent data.
+ * @param addr_len Address length.
+ * @return Data has been deserialized and written to file.
+ */
+void write_file(Package *p, int sockfd, struct sockaddr_in *client_ptr, socklen_t addr_len)
+{
+    printf("Write command received\n");
+    char *response = malloc(BUFFER_SIZE);
+    int fd;
+    if ((fd = open(p->filename, O_CREAT | O_WRONLY | O_TRUNC, 0666)) == -1)
+    {
+        char *error = "Error opening file";
+        printf("%s: %s\n", error, p->filename);
+        sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)client_ptr, addr_len);
+    }
+    else
+    {
+
+        printf("Writing to file: %s\n", p->filename);
+        if ((write(fd, p->data, strlen(p->data))) == -1)
+        {
+            char *error = "Error writing to file";
+            printf("%s: %s\n", error, p->filename);
+            sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)client_ptr, addr_len);
+        }
+        sendto(sockfd, response, 0, 0, (struct sockaddr *)client_ptr, addr_len);
+        printf("Write complete\n");
+    }
+    free(response);
+    close(fd);
+}
+
+/**
+ * Calculates checksum for client-specified file and sends to client. Extracted method.
+ * @param p Package from client with serialized data.
+ * @param sockfd Socket to use to communicate with client.
+ * @param client_ptr Client that sent data.
+ * @param addr_len Address length.
+ * @return Checksum calculated and sent to client.
+ */
+void get_checksum(Package *p, int sockfd, struct sockaddr_in *client_ptr, socklen_t addr_len)
+{
+    printf("Get command received\n");
+    char *response = malloc(BUFFER_SIZE);
+    unsigned int sum = checksum(p->filename);
+    sprintf(response, "%u", sum);
+    sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)client_ptr, addr_len);
+    free(response);
+}
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -118,68 +205,25 @@ int main(int argc, char *argv[])
     }
 
     printf("Server is listening on port %d...\n", port);
-
+    struct sockaddr_in *client_ptr = &client_addr;
+    socklen_t *addr_len_ptr = &addr_len;
     while (1)
     {
-        int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&client_addr, &addr_len);
+        int n = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)client_ptr, addr_len_ptr);
         buffer[n] = '\0';
         Package *p = malloc(sizeof(buffer));
         unpack(p, buffer);
-        char *response = malloc(BUFFER_SIZE);
         if (p->command == READ)
         {
-            printf("Read command received\n");
-            int fd;
-            if ((fd = open(p->filename, O_RDONLY)) == -1)
-            {
-                char *error = "Error opening file";
-                printf("%s: %s\n", error, p->filename);
-                sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)&client_addr, addr_len);
-            }
-            else
-            {
-                printf("Reading from file: %s\n", p->filename);
-                while (read(fd, response, BUFFER_SIZE))
-                {
-                    sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
-                }
-                sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
-                printf("Read complete\n");
-            }
-            close(fd);
+            read_file(p, sockfd, client_ptr, addr_len);
         }
         else if (p->command == WRITE)
         {
-            printf("Write command received\n");
-            int fd;
-            if ((fd = open(p->filename, O_CREAT | O_WRONLY | O_TRUNC, 0666)) == -1)
-            {
-                char *error = "Error opening file";
-                printf("%s: %s\n", error, p->filename);
-                sendto(sockfd, error, strlen(error), 0, (struct sockaddr *)&client_addr, addr_len);
-            }
-            else
-            {
-
-                printf("Writing to file: %s\n", p->filename);
-                if ((write(fd, p->data, strlen(p->data))) == -1)
-                {
-                    char *error = "Error writing to file";
-                    printf("%s: %s\n", error, p->filename);
-                    sendto(sockfd, ERR, strlen(ERR), 0, (struct sockaddr *)&client_addr, addr_len);
-                }
-                sendto(sockfd, response, 0, 0, (struct sockaddr *)&client_addr, addr_len);
-                printf("Write complete\n");
-            }
-            close(fd);
+            write_file(p, sockfd, client_ptr, addr_len);
         }
         else if (p->command == GET)
         {
-            printf("Get command received\n");
-            char *response = malloc(BUFFER_SIZE);
-            unsigned int sum = checksum(p->filename);
-            sprintf(response, "%u", sum);
-            sendto(sockfd, response, strlen(response), 0, (struct sockaddr *)&client_addr, addr_len);
+            get_checksum(p, sockfd, client_ptr, addr_len);
         }
     }
     close(sockfd);
