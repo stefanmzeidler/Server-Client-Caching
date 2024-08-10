@@ -84,7 +84,7 @@ int clearCache()
 }
 
 /**
- * Helper method to open a UDP socket for communication with a server.
+ * Helper method to open a UDP socket for communication with a server. Also sets timeout interval for receiving from server.
  * @param port The port number to use for connection.
  * @return The global variable sockfd, referring to the socket descriptor, has been set.
  */
@@ -107,6 +107,13 @@ void openSocket(uint16_t port)
         clearCache();
         exit(EXIT_FAILURE);
     }
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error");
+    }
 }
 
 /**
@@ -117,7 +124,7 @@ void openSocket(uint16_t port)
 int safeRead(char *response)
 {
     int retval = 0;
-    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1)
+    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1|| (strcmp(response, ERR)) == 0)
     {
         printf("Server read failure, aborting.\n");
         clearCache();
@@ -191,7 +198,7 @@ void pack(Package *p, char *buffer)
  * Validates the cache based on the client-selected method. Can either use a timeout or checksum comparision with the server version.
  * Requires that client and server use the same checksum algorithm.
  * @param filename Cached version of this file will be validated.
- * @return Returns 0 If file does not exist in cache or the cached version is invalid. Returns 1 if cached version exists and is valid. 
+ * @return Returns 0 If file does not exist in cache or the cached version is invalid. Returns 1 if cached version exists and is valid.
  */
 int validateCache(char *filename)
 {
@@ -268,14 +275,6 @@ int update_cache(char *filename)
     safeWrite(buffer);
     char *response = malloc(BUFFER_SIZE);
     int bytes;
-    bytes = safeRead(response);
-    if (strcmp(response, ERR) == 0)
-    {
-        unlink(filename);
-        free(response);
-
-        return -1;
-    }
     while ((bytes = safeRead(response)) > 0)
     {
         write(fd, response, bytes);
@@ -288,7 +287,7 @@ int update_cache(char *filename)
 
 /**
  * Reads selected file and prints to stdout. Will either read from cache or server depending cache validity. File must be present on server.
- * @param filename File to read. 
+ * @param filename File to read.
  * @return Returns 0 if read was successful or -1 if read was not successful.
  */
 int readfile(char *filename)
@@ -355,6 +354,7 @@ char *getInput(char *prompt)
 
 /**
  * Writes user-specified text to server file. If file does not exist on server, new file is created.
+ * Also updates cached version to new version.
  * @param filename Filename of file to write to or create.
  * @param data Data to write to file.
  * @return Returns 0 if write was successful or -1 if write failed.
@@ -377,10 +377,7 @@ int writeFile(char *filename, char *data)
     {
         return -1;
     }
-    if (mode == 1)
-    {
-        update_cache(filename);
-    }
+    update_cache(filename);
     return 0;
 }
 

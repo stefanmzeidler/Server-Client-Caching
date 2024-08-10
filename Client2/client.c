@@ -2,20 +2,20 @@
  * Author: Stefan Zeidler
  * August 6, 2024
  *
- * This program simulates a client asking a server to execute remote commands. 
+ * This program simulates a client asking a server to execute remote commands.
  * This program uses two different methods of cache validation. First, it uses a timeout method so that the cache expires after a set period of time. Second,
  * before reading from the cached file (if any), the program calculates a simple checksum of the file and asks the server for the checksum of the server version.
  * If the checksums do not match, the client requests the server version and updates its cache. If they do match, it simply reads from the cache.
- * 
- * The checksum validation addresses the issue where client A updates the server version of a file before client B's cached version expires. 
- * This means that client B will read from the cache and have an outdated version. With checksum validation, all clients will be significantly more likely to have 
+ *
+ * The checksum validation addresses the issue where client A updates the server version of a file before client B's cached version expires.
+ * This means that client B will read from the cache and have an outdated version. With checksum validation, all clients will be significantly more likely to have
  * the real-time version of the file. However, this comes at the cost of overhead. Each time a client wants to read a file it needs to send and receive data from the
  * server as well as compute its own checksum. As the checksum algorithm gets more complex and the files get larger, this will increase the time to validate the cache.
- * This also does not address the issue if the server version is updated after the file checksum is sent but before the client reads the file from its cache. 
- * Additionally, since my checksum algorith is very simple, I think it is possible that two files with same exact characters but in a different order would 
- * have the same checksum. 
- * 
- * 
+ * This also does not address the issue if the server version is updated after the file checksum is sent but before the client reads the file from its cache.
+ * Additionally, since my checksum algorith is very simple, I think it is possible that two files with same exact characters but in a different order would
+ * have the same checksum.
+ *
+ *
  * Resources used:
  * For serializing and deserializing of structures:
  * https://stackoverflow.com/questions/15707933/how-to-serialize-a-struct-in-c
@@ -51,7 +51,6 @@ const char *ERR = "ERR";
 #define TIMEOUT 60
 static int sockfd;
 int mode = 1;
-
 typedef struct _package
 {
     char command;
@@ -85,7 +84,7 @@ int clearCache()
 }
 
 /**
- * Helper method to open a UDP socket for communication with a server.
+ * Helper method to open a UDP socket for communication with a server. Also sets timeout interval for receiving from server.
  * @param port The port number to use for connection.
  * @return The global variable sockfd, referring to the socket descriptor, has been set.
  */
@@ -108,23 +107,24 @@ void openSocket(uint16_t port)
         clearCache();
         exit(EXIT_FAILURE);
     }
-
-    // struct timeval tv;
-    // tv.tv_sec = 0;
-    // tv.tv_usec = 100000;
-    // if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
-    // {
-    //     perror("Error");
-    // }
-    // if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
-    // {
-    //     perror("Error");
-    // }
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+    {
+        perror("Error");
+    }
 }
+
+/**
+ * Helper method to reduce code duplication when reading from the server.
+ * @param response String where to store the response from the server.
+ * @return Returns the number of bytes read.
+ */
 int safeRead(char *response)
 {
     int retval = 0;
-    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1)
+    if ((retval = read(sockfd, response, BUFFER_SIZE)) == -1|| (strcmp(response, ERR)) == 0)
     {
         printf("Server read failure, aborting.\n");
         clearCache();
@@ -133,6 +133,11 @@ int safeRead(char *response)
     return retval;
 }
 
+/**
+ * Helper method to reduce code duplication when writing to the server.
+ * @param buffer String where to write to the server.
+ * @return Returns the number of bytes written.
+ */
 int safeWrite(char *buffer)
 {
     int retval = 0;
@@ -144,6 +149,12 @@ int safeWrite(char *buffer)
     }
     return retval;
 }
+
+/**
+ * Calculates a file checksum based on the sum of all strings in the file.
+ * @param filepath Path to the file.
+ * @return Returns the calculated file checksum.
+ */
 unsigned int checksum(char *filepath)
 {
     unsigned int sum = 0;
@@ -166,6 +177,13 @@ unsigned int checksum(char *filepath)
     free(buffer);
     return sum;
 }
+
+/**
+ * Method to serialize the Package struct to send to the server.
+ * @param p Package to serialize.
+ * @param buffer Char* buffer to place serialized structure.
+ * @return The buffer contains the serialized structure.
+ */
 void pack(Package *p, char *buffer)
 {
     size_t offset = 0;
@@ -176,6 +194,12 @@ void pack(Package *p, char *buffer)
     memcpy(buffer + offset, p->data, sizeof(p->data));
 }
 
+/**
+ * Validates the cache based on the client-selected method. Can either use a timeout or checksum comparision with the server version.
+ * Requires that client and server use the same checksum algorithm.
+ * @param filename Cached version of this file will be validated.
+ * @return Returns 0 If file does not exist in cache or the cached version is invalid. Returns 1 if cached version exists and is valid.
+ */
 int validateCache(char *filename)
 {
     chdir(CACHE);
@@ -226,6 +250,11 @@ int validateCache(char *filename)
     }
 }
 
+/**
+ * Helper method to update cached version from server. Requests file from server and writes to cache.
+ * @param filename File to update.
+ * @return Returns 0 if operation was successful or -1 of operation failed.
+ */
 int update_cache(char *filename)
 {
 
@@ -246,14 +275,6 @@ int update_cache(char *filename)
     safeWrite(buffer);
     char *response = malloc(BUFFER_SIZE);
     int bytes;
-    bytes = safeRead(response);
-    if (strcmp(response, ERR) == 0)
-    {
-        unlink(filename);
-        free(response);
-
-        return -1;
-    }
     while ((bytes = safeRead(response)) > 0)
     {
         write(fd, response, bytes);
@@ -264,10 +285,14 @@ int update_cache(char *filename)
     return 0;
 }
 
+/**
+ * Reads selected file and prints to stdout. Will either read from cache or server depending cache validity. File must be present on server.
+ * @param filename File to read.
+ * @return Returns 0 if read was successful or -1 if read was not successful.
+ */
 int readfile(char *filename)
 {
     chdir(CACHE);
-    // char *source = malloc(BUFFER_SIZE);
     struct stat *data = malloc(sizeof(struct stat));
     if (!validateCache(filename))
     {
@@ -295,7 +320,10 @@ int readfile(char *filename)
     {
         printf("%s", buffer);
     }
-    printf("\n");
+    if (mode == 2)
+    {
+        printf("\n");
+    }
     stat(filename, data);
     if (mode == 1)
     {
@@ -305,6 +333,11 @@ int readfile(char *filename)
     return 0;
 }
 
+/**
+ * Helper method to get user input from stdin.
+ * @param prompt Prompt to ask user.
+ * @return Character pointer containing use response.
+ */
 char *getInput(char *prompt)
 {
     char *retval = malloc(BUFFER_SIZE);
@@ -319,6 +352,13 @@ char *getInput(char *prompt)
     return retval;
 }
 
+/**
+ * Writes user-specified text to server file. If file does not exist on server, new file is created.
+ * Also updates cached version to new version.
+ * @param filename Filename of file to write to or create.
+ * @param data Data to write to file.
+ * @return Returns 0 if write was successful or -1 if write failed.
+ */
 int writeFile(char *filename, char *data)
 {
 
@@ -337,6 +377,7 @@ int writeFile(char *filename, char *data)
     {
         return -1;
     }
+    update_cache(filename);
     return 0;
 }
 
@@ -355,7 +396,6 @@ int main(int argc, char *argv[])
     }
     openSocket(port);
     mkdir(CACHE, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-    // command = (char *)malloc(BUFFER_SIZE);
     char *modeS = getInput("Choose cache validation method:\n1. Timeout-based validation\n2. Checksum-based validation\nEnter choice (1 or 2): ");
     while (strcmp(modeS, "1") && strcmp(modeS, "2"))
     {
@@ -410,7 +450,7 @@ int main(int argc, char *argv[])
         free(command);
         free(filename);
     }
-    
+
     clearCache();
     close(sockfd);
     return 0;

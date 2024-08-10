@@ -1,3 +1,18 @@
+/**
+ * Author: Stefan Zeidler
+ * August 6, 2024
+ *
+ * This program simulates a server responding to clients read and write requests. It is also able to use provide file checksums for clients' case validation.
+ * Please see comments in client file for more explanation.
+ *
+ * Resources used:
+ * For serializing and deserializing of structures:
+ * https://stackoverflow.com/questions/15707933/how-to-serialize-a-struct-in-c
+ *
+ * For basic checksum algorithm:
+ * https://www.tutorialspoint.com/c-program-to-implement-checksum
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +39,12 @@ typedef struct _package
     char data[BUFFER_SIZE - sizeof(char) - MAX_FILENAME];
 } Package;
 
+/**
+ * Helper method to deserialize message from client.
+ * @param p The Package in which to place the de-serialized data.
+ * @param buffer The serialized message from the client.
+ * @return P now contains the deserialized data from the client.
+ */
 void unpack(Package *p, char *buffer)
 {
     size_t offset = 0;
@@ -33,6 +54,12 @@ void unpack(Package *p, char *buffer)
     offset += MAX_FILENAME;
     memcpy(p->data, buffer + offset, sizeof(p->data));
 }
+
+/**
+ * Calculates a file checksum based on the sum of all strings in the file.
+ * @param filepath Path to the file.
+ * @return Returns the calculated file checksum.
+ */
 unsigned int checksum(char *filepath)
 {
     unsigned int sum = 0;
@@ -54,6 +81,7 @@ unsigned int checksum(char *filepath)
     }
     return sum;
 }
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -110,7 +138,6 @@ int main(int argc, char *argv[])
             }
             else
             {
-                sendto(sockfd, ACK, strlen(ACK), 0, (struct sockaddr *)&client_addr, addr_len);
                 printf("Reading from file: %s\n", p->filename);
                 while (read(fd, response, BUFFER_SIZE))
                 {
